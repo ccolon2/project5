@@ -37,7 +37,22 @@ union fs_block {
 	int pointers[POINTERS_PER_BLOCK];
 	char data[DISK_BLOCK_SIZE];
 };
+void print_valid_blocks(int array[], int size){
+	for(int i=0; i< size; i++){
+		if(array[i] == 0){ 
+			continue;
+		}
+		printf("%d ",array[i]);
+	}
+	printf("\n");
+}
 
+int check_magic(int magic){
+	return (magic == FS_MAGIC);
+}
+int get_inum(int iblock, int inode_index) {
+	return (iblock - 1)*INODES_PER_BLOCK + inode_index;
+}
 int fs_format()
 {
 	//Read in super block
@@ -76,14 +91,59 @@ int fs_format()
 
 void fs_debug()
 {
+	
+	
 	union fs_block block;
+	union fs_block indirect_block;
 
+	// Read in super block
 	disk_read(0,block.data);
 
+	
+	int valid_super_block = check_magic(block.super.magic);
+
 	printf("superblock:\n");
+	if(valid_super_block)
+		printf("    magic number is valid\n");
+	else{
+		printf("    magic number is not valid\n");
+		return;
+	}
 	printf("    %d blocks\n",block.super.nblocks);
 	printf("    %d inode blocks\n",block.super.ninodeblocks);
 	printf("    %d inodes\n",block.super.ninodes);
+
+	// Traversing inode blocks
+	for(int i=1; i<=block.super.ninodeblocks; i++){ //added equal
+		// Read in inode block
+		disk_read(i, block.data);
+
+		// Traverse inodes
+		for(int j = 0; j<INODES_PER_BLOCK; j++) {
+			// Check if inode is valid
+			if(block.inode[j].isvalid) {
+				int inumber = get_inum(i, j);
+				printf("inode %d:\n", inumber);
+				printf("    size: %d bytes\n", block.inode[j].size);
+
+				// Traverse direct pointers
+				if(block.inode[j].size > 0){
+					printf("    direct blocks: ");
+					print_valid_blocks(block.inode[j].direct, POINTERS_PER_INODE);
+				}
+
+				// Traverse indirect pointers
+				if(block.inode[j].indirect != 0){
+					printf("    indirect block: %d\n", block.inode[j].indirect);
+					printf("    indirect data blocks: ");
+					disk_read(block.inode[j].indirect, indirect_block.data);
+					print_valid_blocks(indirect_block.pointers, POINTERS_PER_BLOCK);
+				}
+			}
+		}
+
+	}
+
 }
 
 int fs_mount()
