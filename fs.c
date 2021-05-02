@@ -34,6 +34,9 @@ union fs_block {
 	char data[DISK_BLOCK_SIZE];
 };
 
+int check_magic(int magic){
+	return (magic == FS_MAGIC);
+}
 int fs_format()
 {
 	{
