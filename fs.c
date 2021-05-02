@@ -37,6 +37,17 @@ union fs_block {
 int check_magic(int magic){
 	return (magic == FS_MAGIC);
 }
+
+void print_valid_blocks(int array[], int size){
+	for(int i=0; i< size; i++){
+		if(array[i] == 0){ 
+			continue;
+		}
+		printf("%d ",array[i]);
+	}
+	printf("\n");
+}
+
 int fs_format()
 {
 	{
