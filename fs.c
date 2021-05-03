@@ -39,6 +39,9 @@ union fs_block {
 	char data[DISK_BLOCK_SIZE];
 };
 
+void inode_load( int inumber, struct fs_inode *inode ) {}
+void inode_save( int inumber, struct fs_inode *inode ) {}
+
 void print_valid_blocks(int array[], int size){
 	int i;
 	for (i = 0; i < size; i++) {
@@ -50,14 +53,19 @@ void print_valid_blocks(int array[], int size){
 	printf("\n");
 }
 
-int check_magic(int magic){
+int check_magic(int magic) {
 	return (magic == FS_MAGIC);
 }
+
 int get_inum(int iblock, int inode_index) {
 	return (iblock - 1)*INODES_PER_BLOCK + inode_index;
 }
-int fs_format()
-{
+
+int get_block_num(int inumber) {
+	return floor(inumber/INODES_PER_BLOCK) + 1;
+}
+
+int fs_format() {
 	// Read in super block
 	union fs_block block;
 	disk_read(0, block.data);
@@ -94,8 +102,7 @@ int fs_format()
 	return 1;
 }
 
-void fs_debug()
-{
+void fs_debug() {
 	
 	union fs_block block;
 	union fs_block indirect_block;
@@ -150,8 +157,7 @@ void fs_debug()
 
 }
 
-int fs_mount() 
-{
+int fs_mount() {
 	union fs_block block;
 
 	// check magic number
@@ -179,7 +185,7 @@ int fs_mount()
 				for (k = 0; k < POINTERS_PER_INODE; k++) {
 					int direct_block_num = block.inode[j].direct[k];
 					if (direct_block_num != 0) {
-						printf("block num: %d\n", direct_block_num);
+						//printf("block num: %d\n", direct_block_num);
 						free_block_bitmap[direct_block_num] = 1;
 					}
 				}
@@ -189,7 +195,7 @@ int fs_mount()
 					disk_read(block.inode[j].indirect, indirect_block.data);
 					for (k = 0; k < POINTERS_PER_BLOCK; k++) {
 						int indirect_block_num = indirect_block.pointers[k];
-						printf("indirect block: %d\n", indirect_block_num);
+						//printf("indirect block: %d\n", indirect_block_num);
 						free_block_bitmap[indirect_block_num] = 1;
 					}
 				}
@@ -203,28 +209,31 @@ int fs_mount()
 
 }
 
-int fs_create()
-{
+int fs_create() {
 	return 0;
 }
 
-int fs_delete( int inumber )
-{
+int fs_delete( int inumber ) {
 	return 0;
 }
 
-int fs_getsize( int inumber )
-{
+int fs_getsize( int inumber ) {
+	// read block from inumber
+	union fs_block block;
+	int block_num = get_block_num(inumber);
+	disk_read(block_num, block.data);
+
+	if (block.inode[inumber].isvalid) {	// only return size if valid inode
+		return block.inode[inumber].size;
+	}
 	return -1;
 }
 
 // when scanning free_block_bitmap, start at index 1 bc 0 is not used (block number of 0 indicates null pointer)
-int fs_read( int inumber, char *data, int length, int offset )
-{
+int fs_read( int inumber, char *data, int length, int offset ) {
 	return 0;
 }
 
-int fs_write( int inumber, const char *data, int length, int offset )
-{
+int fs_write( int inumber, const char *data, int length, int offset ) {
 	return 0;
 }
