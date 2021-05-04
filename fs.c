@@ -42,13 +42,12 @@ union fs_block {
 void inode_load( int inumber, struct fs_inode *inode ) {}
 void inode_save( int inumber, struct fs_inode *inode ) {}
 
-void print_valid_blocks(int array[], int size){
-	int i;
-	for (i = 0; i < size; i++) {
-		if(array[i] == 0){ 
+void print_valid_blocks(int a[], int sz){
+	for (int i = 0; i < sz; i++) {
+		if(a[i] == 0){ 
 			continue;
 		}
-		printf("%d ",array[i]);
+		printf("%d ",a[i]);
 	}
 	printf("\n");
 }
@@ -66,35 +65,34 @@ int get_block_num(int inumber) {
 }
 
 int fs_format() {
-	// Read in super block
-	union fs_block block;
-	disk_read(0, block.data);
 
-	// Check if FS already mounted
-	if (mounted) {
-		printf("FS is already mounted, format failed\n");
+	union fs_block block;
+	disk_read(0, block.data); //read in superblock
+
+	
+	if (mounted) { //check if the filesystem is already mounted
+		printf("Format failed: the filesystem is already mounted\n");
 	 	return 0;
 	}
 
-	// Create superblock, prepare for mount
+    //create superblock
 	int ninodeblocks = ceil(.1 * (double)disk_size()); // set aside 10% of blocks for inodes
 	block.super.magic = FS_MAGIC;
 	block.super.nblocks = disk_size();
 	block.super.ninodeblocks = ninodeblocks;
 	block.super.ninodes = INODES_PER_BLOCK * ninodeblocks;
 
-	// Write changes to disk
+	// write changes to disk
 	disk_write(0, block.data);
 
-	// Clear the inode table
+	// clear inode table
 	union fs_block iblock;
-	int i;
-	for (i = 1; i <= block.super.ninodeblocks; i++) {
-		// Read in inode block
+
+	for (int i = 1; i <= block.super.ninodeblocks; i++) {
 		disk_read(i, iblock.data);
-		int j;
-		for (j = 0; j < INODES_PER_BLOCK; j++) {
-			iblock.inode[j].isvalid = 0;
+
+		for (int k = 0; k < INODES_PER_BLOCK; k++) {
+			iblock.inode[k].isvalid = 0;
 		}
 		disk_write(i, iblock.data);
 	}
@@ -103,14 +101,15 @@ int fs_format() {
 }
 
 void fs_debug() {
-	
-	union fs_block block;
 	union fs_block indirect_block;
+	union fs_block block;
+	int valid_super_block;
+	
 
-	// Read in super block
-	disk_read(0,block.data);
+	
+	disk_read(0,block.data); //read in super block
 
-	int valid_super_block = check_magic(block.super.magic);
+	valid_super_block = check_magic(block.super.magic);
 
 	printf("superblock:\n");
 	if (valid_super_block)
@@ -123,32 +122,31 @@ void fs_debug() {
 	printf("    %d inode blocks\n",block.super.ninodeblocks);
 	printf("    %d inodes\n",block.super.ninodes);
 
-	// Traversing inode blocks
-	int i;
-	for (i = 1; i <= block.super.ninodeblocks; i++) { //added equal
-		// Read in inode block
-		disk_read(i, block.data);
 
-		// Traverse inodes
-		int j;
-		for (j = 0; j < INODES_PER_BLOCK; j++) {
-			// Check if inode is valid
-			if (block.inode[j].isvalid) {
-				int inumber = get_inum(i, j);
-				printf("inode %d:\n", inumber);
-				printf("    size: %d bytes\n", block.inode[j].size);
 
-				// Traverse direct pointers
-				if (block.inode[j].size > 0) {
+	for (int i = 1; i <= block.super.ninodeblocks; i++) {  //traverse inode blocks
+	
+		disk_read(i, block.data); //read in inode block
+
+
+		for (int z = 0; z < INODES_PER_BLOCK; z++) {//scan through inodes
+			
+			if (block.inode[z].isvalid) { //verify inode is valid
+				int i_num = (i- 1)*INODES_PER_BLOCK + z;
+				printf("inode %d:\n", i_num);
+				printf("    size: %d bytes\n", block.inode[z].size);
+
+				
+				if (block.inode[z].size > 0) { //go through direct pointers
 					printf("    direct blocks: ");
-					print_valid_blocks(block.inode[j].direct, POINTERS_PER_INODE);
+					print_valid_blocks(block.inode[z].direct, POINTERS_PER_INODE);
 				}
 
-				// Traverse indirect pointers
-				if (block.inode[j].indirect != 0) {
-					printf("    indirect block: %d\n", block.inode[j].indirect);
+			
+				if (block.inode[z].indirect != 0) { //go through indirect pointers
+					printf("    indirect block: %d\n", block.inode[z].indirect);
 					printf("    indirect data blocks: ");
-					disk_read(block.inode[j].indirect, indirect_block.data);
+					disk_read(block.inode[z].indirect, indirect_block.data);
 					print_valid_blocks(indirect_block.pointers, POINTERS_PER_BLOCK);
 				}
 			}
