@@ -42,6 +42,14 @@ union fs_block {
 void inode_load( int inumber, struct fs_inode *inode ) {}
 void inode_save( int inumber, struct fs_inode *inode ) {}
 
+
+int verify_magic_num(int magic) {
+	return (magic == FS_MAGIC);
+}
+
+int get_block_num(int inumber) {
+	return floor(inumber/INODES_PER_BLOCK) + 1;
+}
 void print_valid_blocks(int a[], int sz){
 	for (int i = 0; i < sz; i++) {
 		if(a[i] == 0){ 
@@ -51,24 +59,10 @@ void print_valid_blocks(int a[], int sz){
 	}
 	printf("\n");
 }
-
-int check_magic(int magic) {
-	return (magic == FS_MAGIC);
-}
-
-int get_inum(int iblock, int inode_index) {
-	return (iblock - 1)*INODES_PER_BLOCK + inode_index;
-}
-
-int get_block_num(int inumber) {
-	return floor(inumber/INODES_PER_BLOCK) + 1;
-}
-
 int fs_format() {
-
+	int  ninodeblocks;
 	union fs_block block;
 	disk_read(0, block.data); //read in superblock
-
 	
 	if (mounted) { //check if the filesystem is already mounted
 		printf("Format failed: the filesystem is already mounted\n");
@@ -76,7 +70,7 @@ int fs_format() {
 	}
 
     //create superblock
-	int ninodeblocks = ceil(.1 * (double)disk_size()); // set aside 10% of blocks for inodes
+    ninodeblocks = ceil(.1 * (double)disk_size()); // set aside 10% of blocks for inodes
 	block.super.magic = FS_MAGIC;
 	block.super.nblocks = disk_size();
 	block.super.ninodeblocks = ninodeblocks;
@@ -103,16 +97,9 @@ int fs_format() {
 void fs_debug() {
 	union fs_block indirect_block;
 	union fs_block block;
-	int valid_super_block;
-	
-
-	
 	disk_read(0,block.data); //read in super block
-
-	valid_super_block = check_magic(block.super.magic);
-
 	printf("superblock:\n");
-	if (valid_super_block)
+	if (verify_magic_num(block.super.magic))
 		printf("    magic number is valid\n");
 	else {
 		printf("    magic number is not valid\n");
@@ -121,9 +108,7 @@ void fs_debug() {
 	printf("    %d blocks\n",block.super.nblocks);
 	printf("    %d inode blocks\n",block.super.ninodeblocks);
 	printf("    %d inodes\n",block.super.ninodes);
-
-
-
+	
 	for (int i = 1; i <= block.super.ninodeblocks; i++) {  //traverse inode blocks
 	
 		disk_read(i, block.data); //read in inode block
@@ -160,7 +145,7 @@ int fs_mount() {
 
 	// check magic number
 	disk_read(0,block.data);
-	int valid_super_block = check_magic(block.super.magic);
+	int valid_super_block = verify_magic_num(block.super.magic);
 	if (!valid_super_block) {
 		printf("Invalid superblock\n");
 		return 0;
