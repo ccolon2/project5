@@ -194,11 +194,87 @@ int fs_mount() {
 
 }
 
+//iterates through blocks to find first free inode and sets it to valid, returns 0 if fails
 int fs_create() {
+    union fs_block block;
+    union fs_block iblock;
+    
+    disk_read(0, block.data); //read in superblock
+    
+    
+    
+    int found = 0;
+    int inm = 0;
+    // check for first free inode
+    for (int i = 1; i <= block.super.ninodeblocks; i++) {
+        disk_read(i, iblock.data);
+
+        for (int k = 0; k < INODES_PER_BLOCK; k++) {
+            
+            int temp_inm = ((i-1)*INODES_PER_BLOCK)+k;
+            
+            //if inode is free, set it to be valid and zero all other variables
+            if(iblock.inode[k].isvalid == 0 && temp_inm != 0)
+            {
+                iblock.inode[k].isvalid = 1;
+                iblock.inode[k].size = 0;
+                iblock.inode[k].indirect = 0;
+                for (int j = 0; j < POINTERS_PER_INODE; j++) {
+                    iblock.inode[k].direct[j] = 0;
+                }
+
+                //getting inumber based on array location (k) and block location (i)
+                inm = temp_inm;
+                found = 1;
+            }
+            
+            //write changes if new inode is created, increment number of inodes and return inumber
+            if(found != 0)
+            {
+                disk_write(i, iblock.data);
+                
+                return inm;
+                
+            }
+            
+            
+        }
+        
+        
+    }
+    
+    
 	return 0;
 }
 
+//sets specified inode to invalid
+//TODO ADD BAD INPUT CHECKING
 int fs_delete( int inumber ) {
+    
+    // read block from inumber
+    union fs_block block;
+    int block_num = get_block_num(inumber);
+    disk_read(block_num, block.data);
+    
+    //translate inumber to inode (get array location)
+    int inode_number = inumber - ((block_num-1)*INODES_PER_BLOCK);
+
+    //mark as invalid and zero
+    if (block.inode[inode_number].isvalid) {
+        block.inode[inode_number].isvalid = 0;
+        block.inode[inode_number].size = 0;
+        block.inode[inode_number].indirect = 0;
+        for (int j = 0; j < POINTERS_PER_INODE; j++) {
+            block.inode[inode_number].direct[j] = 0;
+        }
+
+        
+        //write changes
+        disk_write(block_num, block.data);
+        
+        return 1;
+    }
+    
 	return 0;
 }
 
@@ -208,8 +284,11 @@ int fs_getsize( int inumber ) {
 	int block_num = get_block_num(inumber);
 	disk_read(block_num, block.data);
 
-	if (block.inode[inumber].isvalid) {	// only return size if valid inode
-		return block.inode[inumber].size;
+    //translate inumber to inode (get array location)
+    int inode_number = inumber - ((block_num-1)*INODES_PER_BLOCK);
+
+	if (block.inode[inode_number].isvalid) {	// only return size if valid inode
+		return block.inode[inode_number].size;
 	}
 	return -1;
 }
