@@ -15,8 +15,9 @@
 #define POINTERS_PER_INODE 5
 #define POINTERS_PER_BLOCK 1024
 
+int is_mounted = 0;
 int free_block_bitmap[DISK_BLOCK_SIZE] = {0};
-int mounted = 0;
+
 
 struct fs_superblock {
 	int magic;
@@ -50,7 +51,7 @@ int verify_magic_num(int magic) {
 int get_block_num(int inumber) {
 	return floor(inumber/INODES_PER_BLOCK) + 1;
 }
-void print_valid_blocks(int a[], int sz){
+void print_blocks(int a[], int sz){
 	for (int i = 0; i < sz; i++) {
 		if(a[i] == 0){ 
 			continue;
@@ -60,28 +61,28 @@ void print_valid_blocks(int a[], int sz){
 	printf("\n");
 }
 int fs_format() {
+	union fs_block iblock;
 	int  ninodeblocks;
 	union fs_block block;
 	disk_read(0, block.data); //read in superblock
 	
-	if (mounted) { //check if the filesystem is already mounted
-		printf("Format failed: the filesystem is already mounted\n");
-	 	return 0;
+	if (is_mounted) { //check if the filesystem is already is_mounted
+		printf("Format failed: the filesystem is already is_mounted\n");
+	 	return 1;
 	}
 
     //create superblock
     ninodeblocks = ceil(.1 * (double)disk_size()); // set aside 10% of blocks for inodes
-	block.super.magic = FS_MAGIC;
-	block.super.nblocks = disk_size();
 	block.super.ninodeblocks = ninodeblocks;
 	block.super.ninodes = INODES_PER_BLOCK * ninodeblocks;
+	block.super.magic = FS_MAGIC;
+	block.super.nblocks = disk_size();
+	
 
 	// write changes to disk
 	disk_write(0, block.data);
 
 	// clear inode table
-	union fs_block iblock;
-
 	for (int i = 1; i <= block.super.ninodeblocks; i++) {
 		disk_read(i, iblock.data);
 
@@ -95,6 +96,7 @@ int fs_format() {
 }
 
 void fs_debug() {
+	int inum;
 	union fs_block indirect_block;
 	union fs_block block;
 	disk_read(0,block.data); //read in super block
@@ -117,14 +119,14 @@ void fs_debug() {
 		for (int z = 0; z < INODES_PER_BLOCK; z++) {//scan through inodes
 			
 			if (block.inode[z].isvalid) { //verify inode is valid
-				int i_num = (i- 1)*INODES_PER_BLOCK + z;
-				printf("inode %d:\n", i_num);
+			    inum = (i- 1)*INODES_PER_BLOCK + z;
+				printf("inode %d:\n", inum);
 				printf("    size: %d bytes\n", block.inode[z].size);
 
 				
 				if (block.inode[z].size > 0) { //go through direct pointers
 					printf("    direct blocks: ");
-					print_valid_blocks(block.inode[z].direct, POINTERS_PER_INODE);
+					print_blocks(block.inode[z].direct, POINTERS_PER_INODE);
 				}
 
 			
@@ -132,7 +134,7 @@ void fs_debug() {
 					printf("    indirect block: %d\n", block.inode[z].indirect);
 					printf("    indirect data blocks: ");
 					disk_read(block.inode[z].indirect, indirect_block.data);
-					print_valid_blocks(indirect_block.pointers, POINTERS_PER_BLOCK);
+					print_blocks(indirect_block.pointers, POINTERS_PER_BLOCK);
 				}
 			}
 		}
@@ -187,7 +189,7 @@ int fs_mount() {
 	}
 	
 	// prepare fs for use
-	mounted = 1;
+	is_mounted = 1;
 	return 1;
 
 }
