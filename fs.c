@@ -51,6 +51,7 @@ int verify_magic_num(int magic) {
 int get_block_num(int inumber) {
 	return floor(inumber/INODES_PER_BLOCK) + 1;
 }
+
 void print_blocks(int a[], int sz){
 	for (int i = 0; i < sz; i++) {
 		if(a[i] == 0){ 
@@ -60,6 +61,47 @@ void print_blocks(int a[], int sz){
 	}
 	printf("\n");
 }
+
+int first_free_block() {
+    int i;
+    for (i = 2; i < DISK_BLOCK_SIZE; i++) {
+        if (free_block_bitmap[i] == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int getNextBlock() {
+
+    union fs_block block;
+
+    disk_read(0, block.data); //read superblock
+
+
+
+    int i;
+
+    for (i = block.super.ninodeblocks + 1; i < DISK_BLOCK_SIZE; i++) {
+
+        if (free_block_bitmap[i] == 0) {
+
+            memset(&free_block_bitmap[i], 0, sizeof(free_block_bitmap[0]));
+
+            return i;
+
+        }
+
+    }
+
+
+
+    printf("Error: no more room for blocks\n");
+
+    return -1;
+
+}
+
 int fs_format() {
 	union fs_block iblock;
 	int  ninodeblocks;
@@ -116,7 +158,7 @@ void fs_debug() {
 		disk_read(i, block.data); //read in inode block
 
 
-		for (int z = 0; z < INODES_PER_BLOCK; z++) {//scan through inodes
+		for (int z = 1; z < INODES_PER_BLOCK; z++) {//scan through inodes
 			
 			if (block.inode[z].isvalid) { //verify inode is valid
 			    inum = (i- 1)*INODES_PER_BLOCK + z;
@@ -194,7 +236,23 @@ int fs_mount() {
 
 }
 
+//how do we know where to store new inode?
+//how do we access superblock to get number of inodes so we can do block.inode[ninodes] to set inode
+//inodes should start as valid correct
+//do we need to traverse inodes to know where to create?
+
+/*
+struct fs_inode {
+    int isvalid;
+    int size;
+    int direct[POINTERS_PER_INODE];
+    int indirect;
+};
+ */
 //iterates through blocks to find first free inode and sets it to valid, returns 0 if fails
+
+//POSSIBLE SUGGESTION: have inode numbers start at 1, but the inodes themselves are placed starting at position 0
+
 int fs_create() {
     union fs_block block;
     union fs_block iblock;
@@ -265,6 +323,9 @@ int fs_delete( int inumber ) {
         block.inode[inode_number].size = 0;
         block.inode[inode_number].indirect = 0;
         for (int j = 0; j < POINTERS_PER_INODE; j++) {
+            if (block.inode[inode_number].direct[j] != 0) {
+                free_block_bitmap[block.inode[inode_number].direct[j]] = 0;
+            }
             block.inode[inode_number].direct[j] = 0;
         }
 
@@ -294,10 +355,247 @@ int fs_getsize( int inumber ) {
 }
 
 // when scanning free_block_bitmap, start at index 1 bc 0 is not used (block number of 0 indicates null pointer)
+
 int fs_read( int inumber, char *data, int length, int offset ) {
+
+    int block_num = get_block_num(inumber);
+
+    union fs_block block;
+
+    disk_read(0, block.data);
+
+    if (block_num > block.super.ninodeblocks || block_num == 0)
+    {
+        printf("Error: Block number is out of bounds.\n");
+        return 0;
+    }
+
+    disk_read(block_num, block.data);
+
+
+
+    struct fs_inode inode;
+
+    inode = block.inode[inumber % 128];
+
+
+
+    //check for error
+
+    if (!inode.isvalid)
+    {
+        printf("Error: Invalid inode\n");
+        return 0;
+    }
+    else if (inode.size == 0)
+    {
+        printf("Error: Inode's size is 0\n");
+        return 0;
+    }
+    else if (inode.size < offset)
+    {
+        printf("Error: Offset out of bounds\n");
+        return 0;
+    }
+
+
+
+
+    int direct_index_num = offset / DISK_BLOCK_SIZE;
+    if (direct_index_num > 5)
+    {
+        printf("Error: Direct block index out of bounds\n");
+        return 0;
+    }
+
+    if (inode.size < length + offset)
+    {
+        length = inode.size - offset;
+    }
+
+    union fs_block directblock;
+    int totalbytesread = 0;
+    memset(data, 0, length);
+    int tempbytesread = DISK_BLOCK_SIZE;
+    while (direct_index_num < 5 && totalbytesread < length)
+    {
+        disk_read(inode.direct[direct_index_num], directblock.data);
+        if (tempbytesread + totalbytesread > length)
+        {
+            tempbytesread = length - totalbytesread;
+        }
+        strncat(data, directblock.data, tempbytesread);
+        direct_index_num++;
+        totalbytesread += tempbytesread;
+    }
+
+
+
+    // read from indirect block if we still have bytes left to be read
+
+    if (totalbytesread < length)
+    {
+        // read in the indirect block
+        union fs_block indirectblock;
+        union fs_block tempblock;
+        disk_read(inode.indirect, indirectblock.data);
+
+
+
+        // iterate through the indirect data blocks
+
+        int indirectblocks;
+
+        if (inode.size % DISK_BLOCK_SIZE == 0)
+        {
+            indirectblocks = inode.size / DISK_BLOCK_SIZE - 5;
+        }
+        else
+        {
+            indirectblocks = inode.size / DISK_BLOCK_SIZE - 5 + 1;
+        }
+
+        int i;
+
+        tempbytesread = DISK_BLOCK_SIZE;
+
+        for (i = 0; (i < indirectblocks) && (totalbytesread < length); i++)
+        {
+
+            disk_read(indirectblock.pointers[i], tempblock.data);
+
+
+
+            // adjust tempbytesread variable if we have reached the end of the inode
+            if (tempbytesread + totalbytesread > length)
+            {
+                tempbytesread = length - totalbytesread;
+            }
+
+
+
+            // append read data to our data variable
+            strncat(data, tempblock.data, tempbytesread);
+            totalbytesread += tempbytesread;
+
+        }
+
+    }
+
+
+
+    // return the total number of bytes read (could be smaller than the number requested)
+
+    return totalbytesread;
+
+}
+/*
+int fs_write( int inumber, const char *data, int length, int offset )
+{
+    //INPUT CHECKING
+    int data_length = strlen(data);
+    if (data_length < offset + length) {        //checking that offset and length data is possible
+        return 0;
+    }
+    if (inumber > block.super.ninodes) {        //checking that inumber is within number of possible inodes
+        return 0;
+    }
+    
+    
+    // read block from inumber
+    union fs_block block;
+    int block_num = get_block_num(inumber);
+    disk_read(block_num, block.data);
+
+    //translate inumber to inode (get array location)
+    int inode_number = inumber - ((block_num-1)*INODES_PER_BLOCK);
+
+    if (block.inode[inode_number].isvalid) {    // only return size if valid inode
+        char copied_data[length];
+        strncpy(copied_data, data + offset, length);
+        
+        //start writing copied data to blocks in direct
+        
+        
+    }
+    
 	return 0;
 }
+ */
+
+
 
 int fs_write( int inumber, const char *data, int length, int offset ) {
-	return 0;
+    
+    // read block from inumber
+    int block_num = get_block_num(inumber);
+    union fs_block block;
+    disk_read(0, block.data);
+
+    if (block_num > block.super.ninodeblocks || block_num == 0)
+    {
+        printf("Error: Block number is out of bounds.\n");
+        return 0;
+    }
+    //fetch block
+    disk_read(block_num, block.data);
+
+    //check for error
+    if (!block.inode[inumber % 128].isvalid)
+    {
+        printf("Error: Invalid inode\n");
+        return 0;
+    }
+
+
+    int direct_index_num = offset / DISK_BLOCK_SIZE;
+    if (direct_index_num > 5)
+    {
+        printf("Error: Direct block index out of bounds\n");
+        return 0;
+    }
+    
+    union fs_block directblock;
+    int totalbyteswritten = 0;
+    int tempbyteswritten = DISK_BLOCK_SIZE;
+    while (direct_index_num < 5 && totalbyteswritten < length)
+    {
+        printf("BLOCK NUMBER: %d \n", block.inode[inumber % 128].direct[direct_index_num]);
+        if (block.inode[inumber % 128].direct[direct_index_num] == 0) {
+            int free_block_num = first_free_block();
+            //int free_block_num = 3;
+            printf("NEW BLOCK NUMBER: %d \n", free_block_num);
+            
+            block.inode[inumber % 128].direct[direct_index_num] = free_block_num;
+            block.inode[inumber % 128].size += tempbyteswritten;
+            
+            //get block to write to
+            union fs_block wblock;
+            strncpy(wblock.data, data + totalbyteswritten, tempbyteswritten);
+            disk_write(free_block_num, wblock.data);
+            disk_write(block_num, block.data);
+            
+            //increment bytes_written
+            free_block_bitmap[free_block_num] = 1;
+            totalbyteswritten += tempbyteswritten;
+        }
+        /*
+        disk_read(inode.direct[direct_index_num], directblock.data);
+        if (tempbytesread + totalbytesread > length)
+        {
+            tempbytesread = length - totalbytesread;
+        }
+        strncat(data, directblock.data, tempbytesread);
+        direct_index_num++;
+        totalbytesread += tempbytesread;
+         */
+        direct_index_num++;
+    }
+
+    return totalbyteswritten;
 }
+
+
+//REMINDER: free blocks in direct when deleting inode
+
+//is bitmap to big? we only have 5 blocks apparently
