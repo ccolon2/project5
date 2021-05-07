@@ -108,8 +108,8 @@ int fs_format() {
 	union fs_block block;
 	disk_read(0, block.data); //read in superblock
 	
-	if (is_mounted) { //check if the filesystem is already is_mounted
-		printf("Format failed: the filesystem is already is_mounted\n");
+	if (is_mounted) { //check if the filesystem is already mounted
+		printf("Format failed: the filesystem is already mounted\n");
 	 	return 1;
 	}
 
