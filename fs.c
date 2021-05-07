@@ -110,7 +110,7 @@ int fs_format() {
 	
 	if (is_mounted) { //check if the filesystem is already mounted
 		printf("Format failed: the filesystem is already mounted\n");
-	 	return 1;
+	 	return 0;
 	}
 
     //create superblock
